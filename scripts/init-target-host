@@ -1,0 +1,30 @@
+#!/bin/bash
+
+WORK_DIR=$(pwd)
+
+msg(){
+    echo -e "[+]\033[32m $@\033[0m"
+}
+
+masscan(){
+cat <<EOF  > masscan.conf
+adapter = ens160
+range = $hosts
+ports = 1-79,81-442,444-8079,8081-8442,8444-65535,U:65535
+EOF
+}
+
+main(){
+    
+    if [[ $# -eq 0 ]];then
+        echo "Usage: `basename $0` <host file>"
+        exit
+    elif [[ $# -eq 1 ]];then
+        if [[ -s $1 ]];then
+            hosts=$(cat $1|tr '\n' ','|sed 's/,$//g')
+            masscan
+        fi
+    fi
+}
+
+main $@

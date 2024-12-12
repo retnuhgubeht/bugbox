@@ -1,0 +1,148 @@
+#!/bin/bash
+
+########
+# Helper
+########
+source $HOME/Workspace/.env
+
+DNS_WORDLIST="$HOME/Workspace/Tools/wordlists/best-dns-wordlist.txt"
+RSV_WORDLIST="$HOME/Workspace/Tools/wordlists/resolvers.txt"
+PRM_WORDLIST="$HOME/Workspace/Tools/wordlists/perm-words.txt"
+
+ROOT_DIR="$(pwd)"
+
+# Function to display a task message
+msg() {
+    echo -e "[+]\033[32m $@ \033[0m"
+}
+
+# Function to display an error message
+err() {
+    echo -e "[-]\033[31m $@ \033[0m"
+}
+
+waymore(){
+	cd "$HOME/Workspace/Tools/waymore"
+	source bin/activate
+	python waymore.py $@
+	deactivate
+	cd - &>/dev/null
+}
+
+# initilize working directory
+init_dir() {
+    if [[ ! -d "$1" ]];then
+        mkdir -p "$1"
+    fi
+}
+
+#######
+# Recon
+#######
+
+# enumerate subdomains
+subdomains() {
+    msg "Enumerating subdomains for ${domain}"
+    local WORK_DIR="${ROOT_DIR}/recon/${domain}/subdomains"
+    init_dir "${WORK_DIR}"
+
+    curl -s "https://crt.sh/?q=${domain}&output=json"|jq -r '.[].name_value'|grep -v '^*'|sort -u > ${WORK_DIR}/crt-res.txt
+    subfinder -d "$domain" -silent -o ${WORK_DIR}/subfinder-res.txt &>/dev/null
+    github-subdomains -raw -t "$GITHUB_TOKEN" -d $domain -o  ${WORK_DIR}/github-res.txt &>/dev/null
+    shosubgo -d $domain -s "$SHODAN_TOKEN" -o ${WORK_DIR}/shosubgo-res.txt &>/dev/null
+    cat ${WORK_DIR}/*-res.txt|sort -u > ${WORK_DIR}/out.txt
+    shuffledns -silent -l ${WORK_DIR}/out.txt -r "$RSV_WORDLIST" -o ${WORK_DIR}/domains.txt
+    msg "Looking for juicy subdomains for ${domain}"
+    grep -E 'api|dev|gitea|jenkin|teamcity|bamboo|gitlab|github|travis|gcp|aws|azure|jira|vpn' $WORK_DIR/domains.txt > $WORK_DIR/juicy-domains.txt
+}
+
+
+# enumerate live domains
+livedomains(){
+    msg "Querying HTTP/HTTPS for ${domain}"
+    local WORK_DIR="${ROOT_DIR}/recon/${domain}/http"
+    init_dir "${WORK_DIR}"
+    cd ${WORK_DIR}
+
+    httpx -l ../subdomains/domains.txt --title -sc -wc \
+          -p "http:3000,https:3000,http:443,https:443,http:5000,https:5000,http:6443,https:6443,http:80,https:80,http:8000,https:8000,http:8080,https:8080,http:8081,https:8081,http:8091,https:8091,http:8443,https:8443,http:9443,https:9443,http:7742,https:7742,http:8092,https:8092,http:8083,https:8083,http:9000,https:9000,http:9001,https:9001,http:9090,https:9090,http:9092,https:9092,http:5601,https:5601,http:9200,https:9200,http:9300,https:9300,http:2375,https:2375,http:2376,https:2376" \
+          -o httpx-urls.txt &> /dev/null
+    cat httpx-urls.txt|cut -d "/" -f3|awk '{print $1}'|sort -u > httpx-domains.txt
+    cat httpx-urls.txt|awk '{print $1}'|sort -u > urls.txt
+    cd "${ROOT_DIR}" &> /dev/null
+}
+
+# port scanning
+portscanning() {
+    msg "Scanning subdomains open ports for ${domain}"
+    local WORK_DIR="${ROOT_DIR}/recon/${domain}/scans"
+    init_dir "${WORK_DIR}"
+
+    naabu -list ../httpx-domains.txt -silent -o out.txt -port - &>/dev/null
+    cd "${ROOT_DIR}" &> /dev/null
+}
+
+# enumerate old treasures
+wayback() {
+    local WORK_DIR="${ROOT_DIR}/recon/${domain}/wayback"
+    target_domains="${ROOT_DIR}/recon/${domain}/httpx-domains.txt"
+    init_dir "${WORK_DIR}"
+
+    msg "Scanning urls from wayback for ${domain}"
+    #cat $target_domains|gau --blacklist ttf,woff,svg,png --o "${WORK_DIR}/gau.txt"
+    cat $target_domains|waybackurls -no-subs> "${WORK_DIR}/waybackurls.txt"
+    #waymore -i $target_domains -mode U -oU "${WORK_DIR}/waymore.txt" -oR "${WORK_DIR}" &>/dev/null
+    cat *.txt|sort -u > "${WORK_DIR}/urls.txt"
+    cd "${ROOT_DIR}" &> /dev/null
+}
+
+# enumerate the site for links e.g javascript
+spider(){
+    local WORK_DIR="${ROOT_DIR}/recon/${domain}/spider"
+    init_dir "${WORK_DIR}"
+    msg "Spidering for links and download js files for ${domain}"
+    cat ../httpx-urls.txt|hakrawler -d 3 > hakrawler.txt
+    gospider -S ../urls.txt -o gospider -c 10 -d 1 -t 10 --other-source --include-subs &>/dev/null
+    # collect js files
+    mkdir -p js/src
+    cat gospider/*|grep '\[javascript\]'|awk '{print $NF}'|grep -E '\.js$'|tee -a out.txt &>/dev/null
+    cat hakrwaler.txt|grep '\[script\]'|awk '{print $NF}'|grep -E '\.js$' |tee -a out.txt &>/dev/null
+    cat out.txt|sort -u > js/urls.txt
+    rm out.txt
+    cd js/src
+    for url in $(cat ../urls.txt);do
+        curl -O -s "$url" &>/dev/null
+    done
+    cd "${ROOT_DIR}" &> /dev/null
+}
+
+# get screenshot for live domains
+screenshot(){
+      local WORK_DIR="${ROOT_DIR}/recon/${domain}/http/screenshot"
+      init_dir "${WORK_DIR}"
+     
+      msg "Taking screenshots for HTTP/HTTPS services for ${domain}"
+	  gowitness file -f ${WORK_DIR}/../urls.txt --screenshot-path ${WORK_DIR} &>/dev/null
+      deactivate
+	  cd $ROOT_DIR
+}
+
+#######
+# Main
+#######
+
+main() {
+    if [[ $# -eq 0 ]];then
+        echo "Usage: $(basename "$0") <file_with_domains>"
+    elif [[ -f $1 ]];then
+        for domain in $(cat $1);do
+            #subdomains
+            #livedomains
+            #screenshot
+            #wayback
+            #spider        
+        done
+    fi
+}
+
+main "$@"

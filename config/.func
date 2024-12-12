@@ -1,0 +1,105 @@
+#!/bin/bash
+
+ENDPOINTS_WORDLIST="$HOME/Tools/wordlists/custom/juicy_endpoints.txt"
+
+msg() {
+	echo -e "[+]\033[32m $@\033[0m"
+}
+
+# enumerate js files
+content_spider(){
+	if [[ $# -eq 0 ]]; then
+        echo "Usage: $(basename "$0") <URL>"
+    else
+		msg "Spidering files"
+		local WORK_DIR="$(pwd)/recon/http"
+    	if [[ ! -d "${WORK_DIR}" ]] || [[ ! -d "${WORK_DIR}/hosts" ]];then
+        	mkdir -p "${WORK_DIR}"
+			mkdir -p "${WORK_DIR}/hosts"
+   	 	fi
+
+		gospider -s $1 -o "${WORK_DIR}/gospider" &>/dev/null
+		cat "${WORK_DIR}/gospider/"*|grep '\[url\]'|awk '{print $5}'|grep -v '.js$' |tee -a "${WORK_DIR}/out.txt" &>/dev/null
+		cat "${WORK_DIR}/gospider/"*|grep '\[linkfinder\]'|awk '{print $NF}'|grep http|grep -v '.js$'|sort -u|tee -a "${WORK_DIR}/out.txt" &>/dev/null
+		cat "${WORK_DIR}/gospider/"*|grep '\[href\]'|awk '{print $NF}'|tee -a "${WORK_DIR}/out.txt" &>/dev/null
+	    cat "${WORK_DIR}/out.txt"|sort -u > "${WORK_DIR}/links.txt"
+		rm "${WORK_DIR}/out.txt"
+
+		msg "Enumerating/downloading js files"
+    	local JS_DIR="${WORK_DIR}/js"
+		local URL=$1
+    	if [[ ! -d "${JS_DIR}" ]];then
+        	mkdir -p "${JS_DIR}/src"
+    	fi
+
+    	cd ${JS_DIR}/src
+		cat "${WORK_DIR}/gospider/"*|grep from:|awk '{print $4}'|tr -d ']'|sort -u > ../js_urls.txt
+    	echo $URL|hakrawler -d 4 |awk '{print $NF}' > ../js_urls.txt
+    	for url in $(cat ../js_urls.txt);do
+        	curl -O -s "$url"
+    	done
+		cd - &>/dev/null
+	fi
+}
+
+# query for live http(s) services
+query_http(){
+	if [[ $# -eq 0 ]]; then
+        echo "Usage: $(basename "$0") <IP|url>"
+	elif [[ $# -eq 1 ]];then
+    	msg "Querying for HTTP/HTTPS ..."
+    	httpx -u "$1" --title -sc -wc \
+        	  -p "http:3000,https:4433,https:3000,http:443,https:443,http:5000,https:5000,http:6443,https:6443,http:80,https:80,http:8000,https:8000,http:8080,https:8080,http:8081,https:8081,http:8091,https:8091,http:8443,https:8443,http:9443,https:9443,http:7742,https:7742,http:8092,https:8092,http:8083,https:8083,http:9000,https:9000,http:9001,https:9001,http:9090,https:9090,http:9092,https:9092,http:5601,https:5601,http:9200,https:9200,http:9300,https:9300,http:2375,https:2375,http:2376,https:2376"	
+    fi
+}
+
+# query tls certs
+query_tls_certs(){
+	if [[ $# -eq 0 ]]; then
+        echo "Usage: $(basename "$0") <IP>"
+	elif [[ $# -eq 1 ]];then
+    	res=$(tlsx -u $1 -nc -dns -silent|tr '\n' ' ')
+		echo $1 $res
+    fi
+}
+
+httpx_tls(){
+	if [[ $# -eq 0 ]]; then
+        echo "Usage: $(basename "$0") <IP>"
+	elif [[ $# -eq 1 ]];then
+    	tlsx -u $1 -nc -dns -silent|httpx -p https:443 --title -sc -wc
+    fi
+}
+
+lazyhttpx(){
+	msg "Probbing http(s) sites .."
+	httpx -silent --title -sc -wc \
+        -p "http:3000,https:3000,http:443,https:443,http:5000,https:5000,http:6443,https:6443,http:80,https:80,http:8000,https:8000,http:8080,https:8080,http:8081,https:8081,http:8091,https:8091,http:8443,https:8443,http:9443,https:9443,http:7742,https:7742,http:8092,https:8092,http:8083,https:8083,http:9000,https:9000,http:9001,https:9001,http:9090,https:9090,http:9092,https:9092,http:5601,https:5601,http:9200,https:9200,http:9300,https:9300,http:2375,https:2375,http:2376,https:2376" \
+        -o "$(pwd)/lazyhttpx.txt" &>/dev/null
+	cat lazyhttpx.txt|awk '{print $1}'|tee -a urls.txt &>/dev/null
+	httpx -silent -l urls.txt -mc 200 -path $ENDPOINTS_WORDLIST -sc -wc -o lazyhttpx-endpoints.txt &>/dev/null
+}
+
+# get results from previous recon
+recon_overview(){
+	grep -w $IP recon/scans/masscan.txt; grep -w $IP recon/http/urls.txt; grep -w $IP recon/http/tls.txt
+}
+
+query_ports(){
+	ports=$(grep $IP recon/scans/masscan.txt|awk '{print $3}'|sort -u|tr '\n' ','|sed 's/,$//')
+	nmap -sCV -p$ports -Pn -n $IP
+}
+
+# generate hosts for /etc/hosts
+query_hosts_domains(){
+	if [[ -f $(pwd)/recon/http/tls.txt ]];then
+		msg "Host domains from TLS certs"
+		grep $IP recon/http/tls.txt|awk '{print $NF}'|tr -d '[]'|tee recon/http/$IP-hosts.txt &>/dev/null
+		echo $IP $(grep $IP recon/http/tls.txt|awk '{print $NF}'|tr -d '[]'|tr '\n' ' ')
+	fi
+
+	if [[ -f $(pwd)/recon/hosts.txt ]];then
+		msg "Host domains from IP"
+		grep $IP recon/hosts.txt
+	fi
+}

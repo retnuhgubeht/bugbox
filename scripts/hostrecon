@@ -1,0 +1,140 @@
+#!/bin/bash
+# Description: Quick script to automate hosts recon phase
+
+#########
+# Helpers
+#########
+
+ROOT_DIR="$(pwd)"
+ENDPOINTS_WORDLIST="$HOME/Workspace/Tools/wordlists/custom/endpoints-wordlist.txt"
+
+# display a task message
+msg() {
+    echo -e "[+]\033[32m $@ \033[0m"
+}
+
+# initialize working directory
+init_work_dir(){
+    if [[ ! -d $1 ]];then
+        mkdir -p $1
+    fi
+}
+
+# organize files
+clean(){
+    msg "Getting a list of live hosts ..."
+    cat "${ROOT_DIR}/recon/scans/masscan.txt"|grep open|awk '{print $4}'|sort -u > "${ROOT_DIR}/masscan_hosts.txt"
+    cat "${ROOT_DIR}/recon/http/httpx-urls.txt"|awk '{print $1}'|cut -d / -f3|cut -d : -f1|sort -u > "${ROOT_DIR}/httpx_hosts.txt"
+    cat ${ROOT_DIR}/*_hosts.txt|sort -u > ${ROOT_DIR}/live_hosts.txt
+
+    msg "Cleaning unwanted files ..."
+    rm "$host_file"
+    rm ${ROOT_DIR}/httpx_hosts.txt
+    rm ${ROOT_DIR}/masscan_hosts.txt
+}
+
+#####################
+# Detect Technologies
+#####################
+
+# save results for technology found
+techResults(){
+    if [[ $request_status -eq 0 ]];then
+        echo $url|cut -d / -f3|tee -a $WORK_DIR/$tech_file &>/dev/null
+    fi
+}
+
+# ivanti
+ivanti(){
+    local WORK_DIR="${ROOT_DIR}/recon/http/tech"
+    init_work_dir ${WORK_DIR}
+
+    query="Ivanti User Portal"
+    tech_file="ivanti.txt"
+
+    curl $url -L -k -s|grep "$query" &>/dev/null
+    request_status=$(echo $?)
+    techResults $request_status
+}
+
+# cisco
+cisco(){
+    local WORK_DIR="${ROOT_DIR}/recon/http/tech"
+    init_work_dir ${WORK_DIR}
+
+    payload="${url}/+CSCOE+/logon.html"
+    query="/+CSCOE+/logon.html"
+    tech_file="cisco_asa_vpn.txt"
+
+    curl $url -L -k -s|grep "$query" &>/dev/null
+    request_status=$(echo $?)
+    techResults $request_status
+}
+
+
+##############
+# Recon Phase
+##############
+
+# scan for open ports
+scan() {
+    local WORK_DIR="${ROOT_DIR}/recon/scans"
+    init_work_dir $WORK_DIR
+    
+    msg "Scanning for open ports ..."
+    sudo masscan -c "${ROOT_DIR}/masscan.conf" -oL "${WORK_DIR}/masscan.txt" &>/dev/null
+}
+
+# resolve host IP
+resol(){
+    local WORK_DIR="${ROOT_DIR}/recon/"
+    init_work_dir ${WORK_DIR}
+    
+    msg "Resolving Host(s) IP ..."
+    dnsx -silent -l "${ROOT_DIR}/scope.txt" -re -ptr -nc|tr -d '[]'|sed 's/PTR//'|tee "${WORK_DIR}/hosts.txt" &>/dev/null
+}
+
+# query for live http(s) services
+http(){
+    local WORK_DIR="${ROOT_DIR}/recon/http"
+    host_file="/tmp/hosts.txt"
+    init_work_dir ${WORK_DIR}
+
+    cd "${WORK_DIR}"
+    msg "Querying for HTTP/HTTPS ..."
+    cat "${ROOT_DIR}/scope.txt"|grep -v / > $host_file   
+
+    httpx -l "$host_file" --title -sc -wc -ss \
+        -p "http:3000,https:3000,http:443,https:443,http:5000,https:5000,http:6443,https:6443,http:80,https:80,http:8000,https:8000,http:8080,https:8080,http:8081,https:8081,http:8091,https:8091,http:8443,https:8443,http:9443,https:9443,http:7742,https:7742,http:8092,https:8092,http:8083,https:8083,http:9000,https:9000,http:9001,https:9001,http:9090,https:9090,http:9092,https:9092,http:5601,https:5601,http:9200,https:9200,http:9300,https:9300,http:2375,https:2375,http:2376,https:2376" \
+        -o "${WORK_DIR}/httpx-urls.txt" &>/dev/null
+    cat httpx-urls.txt|awk '{print $1}'|sort -u > urls.txt
+
+    tlsx -u $(grep https urls.txt|tr '\n' ','|sed 's/,$//g') -san -cn -silent -o tls.txt &>/dev/null
+    
+    # detect technologies
+    for url in $(cat urls.txt);do
+        cisco
+        ivanti
+    done
+
+    cd "${ROOT_DIR}"
+}
+
+########
+# Main
+########
+
+main() {
+    if [[ $# -eq 0 ]]; then
+        echo "Usage: $(basename "$0") <scope_file>"
+    elif [[ $# -eq 1 ]] && [[ -f $1 ]];then
+        scan
+        resol
+        http
+        clean
+    else
+        echo "ERROR: $1 not a file"
+    fi
+}
+
+main "$@"

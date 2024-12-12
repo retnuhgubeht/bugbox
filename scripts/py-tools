@@ -1,0 +1,64 @@
+#!/bin/bash
+set -x
+
+export REQUESTS_CA_BUNDLE=/usr/local/share/ca-certificates/ca-root.crt
+
+init_pip(){
+    python -m venv .
+    source bin/activate
+    pip install pyinstaller
+}
+
+copy_binaries(){
+deactivate
+mv dist/* /opt/bin/
+cd -
+}
+
+git clone https://github.com/yassineaboukir/Asnlookup.git
+cd Asnlookup 
+init_pip
+pip install -r requirements.txt
+pyinstaller -F asnlookup.py
+copy_binaries
+
+git clone https://github.com/vysecurity/DomLink.git
+cd DomLink
+init_pip
+pip install -r requirements.txt
+pyinstaller -F domLink.py
+copy_binaries
+
+git clone https://github.com/gwen001/github-search.git
+cd github-search
+init_pip
+pip install -r requirements.txt
+pyinstaller --onefile github-subdomains.py
+pyinstaller --onefile github-secrets.py
+pyinstaller --onefile github-endpoints.py
+pyinstaller --onefile github-users.py
+pyinstaller --onefile github-employees.py
+copy_binaries
+
+git clone https://github.com/guelfoweb/knock.git
+cd knock
+init_pip
+pip install -r requirements.txt
+pyinstaller --onefile knockpy.py
+copy_binaries
+
+git clone https://github.com/GerbenJavado/LinkFinder.git
+cd LinkFinder
+init_pip
+pip install -r requirements.txt
+pyinstaller --onefile linkfinder.py
+copy_binaries
+
+git clone https://github.com/nsonaniya2010/SubDomainizer.git
+cd SubDomainizer
+init_pip
+pip install -r requirements.txt
+pyinstaller -F SubDomainizer.py
+deactivate
+mv dist/* /opt/bin/subdomainizer
+cd -

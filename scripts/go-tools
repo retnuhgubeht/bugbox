@@ -1,0 +1,38 @@
+#!/bin/bash
+GO111MODULE=off go get github.com/subfinder/goaltdns &>/dev/null
+GO111MODULE=off go get github.com/haccer/subjack &>/dev/null
+GO111MODULE=off go get github.com/tomnomnom/gf &>/dev/null
+GO111MODULE=off go get github.com/tomnomnom/assetfinder &>/dev/null
+go install github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest &>/dev/null
+go install github.com/tomnomnom/meg@latest &>/dev/null
+go install github.com/tomnomnom/waybackurls@latest &>/dev/null
+go install github.com/tomnomnom/httprobe@latest &>/dev/null
+go install github.com/tomnomnom/anew@latest &>/dev/null
+go install github.com/tomnomnom/gron@latest &>/dev/null
+go install github.com/ffuf/ffuf/v2@latest &>/dev/null
+go install github.com/lc/gau/v2/cmd/gau@latest &>/dev/null
+go install github.com/OJ/gobuster/v3@latest &>/dev/null
+go install github.com/jaeles-project/gospider@latest &>/dev/null
+go install github.com/hakluke/hakrawler@latest &>/dev/null
+go install github.com/projectdiscovery/httpx/cmd/httpx@latest &>/dev/null
+go install github.com/BishopFox/jsluice/cmd/jsluice@latest &>/dev/null
+go install github.com/j3ssie/metabigor@latest &>/dev/null
+go install github.com/projectdiscovery/naabu/v2/cmd/naabu@latest &>/dev/null
+go install github.com/projectdiscovery/nuclei/v2/cmd/nuclei@latest &>/dev/null
+go install github.com/incogbyte/shosubgo@latest &>/dev/null
+go install github.com/projectdiscovery/shuffledns/cmd/shuffledns@latest &>/dev/null
+go install github.com/003random/getJS@latest &>/dev/null
+go install github.com/gwen001/github-subdomains@latest &>/dev/null
+go install github.com/owasp-amass/amass/v3/...@master &>/dev/null
+go install github.com/projectdiscovery/interactsh/cmd/interactsh-client@latest &>/dev/null
+go install github.com/projectdiscovery/notify/cmd/notify@latest &>/dev/null
+go install github.com/projectdiscovery/cvemap/cmd/cvemap@latest &>/dev/null
+go install github.com/projectdiscovery/dnsx/cmd/dnsx@latest &>/dev/null
+go install github.com/projectdiscovery/tlsx/cmd/tlsx@latest &>/dev/null
+go install github.com/projectdiscovery/katana/cmd/katana@latest &>/dev/null
+go install github.com/projectdiscovery/cloudlist/cmd/cloudlist@latest &>/dev/null
+go install github.com/projectdiscovery/asnmap/cmd/asnmap@latest &>/dev/null
+go install github.com/bitquark/shortscan/cmd/shortscan@latest &>/dev/null
+go install github.com/OJ/gobuster/v3@latest &>/dev/null
+
+mv /go/bin/* /opt/bin/

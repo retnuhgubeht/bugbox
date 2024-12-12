@@ -1,0 +1,5 @@
+#!/bin/sh
+git clone https://github.com/epi052/feroxbuster
+cd feroxbuster
+make
+mv target/release/feroxbuster /opt/bin/

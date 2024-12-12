@@ -1,0 +1,99 @@
+#!/bin/bash
+# Author: github.com/retnuhgubeht
+# Descripton: Quick script to setup bugbounty box environment.
+
+ROOT_DIR=$(pwd)
+TOOLS_BASE_DIR=$HOME/Tools
+
+msg(){
+    echo -e "[+]\033[32m $@ \033[0m" 
+}
+
+err(){
+    echo -e "[-]\033[31m $@ \033[0m" 
+}
+
+banner(){
+clear
+echo -e "\033[35m"
+echo "___.               ___.                 "
+echo "\_ |__  __ __  ____\_ |__   _______  ___"
+echo " | __ \|  |  \/ ___\| __ \ /  _ \  \/  /"
+echo " | \_\ \  |  / /_/  > \_\ (  <_> >    < "
+echo " |___  /____/\___  /|___  /\____/__/\_ \\"
+echo "     \/     /_____/     \/            \/"
+echo -e "\033[0m"
+}
+
+download_wordlists(){
+    msg "Downloading worldlists"
+    if [[ ! -d $TOOLS_BASE_DIR/wordlists/assetnote ]] || [[ ! -d $TOOLS_BASE_DIR/wordlists/custom ]];then
+        mkdir -p $TOOLS_BASE_DIR/wordlists/assetnote
+        mkdir -p $TOOLS_BASE_DIR/wordlists/custom
+    fi
+    curl -s -o $TOOLS_BASE_DIR/wordlists/assetnote/httparchive_apiroutes.txt https://wordlistss-cdn.assetnote.io/data/automated/httparchive_apiroutes_2024_05_28.txt
+    curl -s -o $TOOLS_BASE_DIR/wordlists/assetnote/httparchive_jsp_jspa.txt https://wordlistss-cdn.assetnote.io/data/automated/httparchive_jsp_jspa_do_action_2024_05_28.txt
+    curl -s -o $TOOLS_BASE_DIR/wordlists/assetnote/httparchive_subdomains.txt https://wordlistss-cdn.assetnote.io/data/automated/httparchive_subdomains_2024_05_28.txt
+    git clone https://github.com/danielmiessler/SecLists.git $TOOLS_BASE_DIR/wordlists/seclist &>/dev/null
+    ln -sf $ROOT_DIR/config/wordlists/juicy_endpoints.txt $TOOLS_BASE_DIR/wordlists/custom/juicy_endpoints.txt
+    ln -sf $ROOT_DIR/config/wordlists/resolvers.txt $TOOLS_BASE_DIR/wordlists/custom/resolvers.txt
+}
+
+build_docker_images(){
+    msg "Building base docker images"
+    for dir in dockerfiles/*;do
+        tag=$(echo $dir|cut -d / -f2)
+        docker build -f "${dir}/Dockerfile" -t "${tag}:latest" --network host --build-arg USER=$USER "${dir}/" &>/dev/null
+    done
+}
+
+build_binaries(){
+    msg "Building tools binaries"
+    if [[ ! -d $TOOLS_BASE_DIR/bin ]];then
+        mkdir -p $TOOLS_BASE_DIR/bin
+    fi
+
+    docker run --rm -it \
+           -v $TOOLS_BASE_DIR/bin:/opt/bin/ \
+           -v ${ROOT_DIR}/scripts:/usr/local/bin/ \
+           --network host \
+           go-builder:latest go-tools &>/dev/null
+    docker run --rm -it \
+           -v $TOOLS_BASE_DIR/bin:/opt/bin/ \
+           -v ${ROOT_DIR}/scripts:/tmp/bin \
+           --network host \
+           -e "PATH=/tmp/bin:$PATH" \
+           py-builder:latest py-tools &>/dev/null
+    docker run --rm -it \
+           -v $TOOLS_BASE_DIR/bin:/opt/bin/ \
+           -v ${ROOT_DIR}/scripts:/usr/local/bin/ \
+           --network host \
+           rust-builder:latest rust-tools &>/dev/null
+}
+
+init_config(){
+    msg "Initilizing configuration files"
+    if [[ ! -d $HOME/.local/bin ]];then
+        mkdir -p $HOME/.local/bin
+    fi
+
+    ln -sf ${ROOT_DIR}/scripts/kali $HOME/.local/bin/kali
+    ln -sf ${ROOT_DIR}/scripts/webrecon $TOOLS_BASE_DIR/bin/webrecon
+    ln -sf ${ROOT_DIR}/scripts/hostrecon $TOOLS_BASE_DIR/bin/hostrecon
+}
+
+#
+# Main
+#
+banner
+
+msg "Check if OS is compatible .."
+if which apt &>/dev/null;then
+    download_wordlists
+    build_docker_images
+    build_binaries
+    init_config
+else
+    err "The script is only tested in debian based OS"
+    exit 1
+fi
